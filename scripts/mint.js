@@ -19,27 +19,27 @@ import path from 'path';
 
 const workerPath = path.join(process.cwd(), 'src/blockHeightWorker.js');
 const blockHeightWorker = new Worker(workerPath);
-// 标识当状态
+// 标识mint状态
 let isMint = false
 
 blockHeightWorker.on('message', (message) => {
   if (message.type === 'height') {
     const blockNumber = message.blockNumber;
+    let flag = false;
     for (let i = 0; i < BLOCK_HEIGHTS.length; i++) {
       let startHeight = BLOCK_HEIGHTS[i][0]
       let endHeight = BLOCK_HEIGHTS[i][1]
       if (blockNumber >= startHeight && blockNumber <= endHeight) {
-        isMint = true
+        flag = true;
         break
-      } else {
-        if (isMint) {
-          logger.info(`ended`);
-          isMint = false;
-        }
       }
     }
+    if (isMint && !flag) {
+      logger.info('end...');
+    }
+    isMint = flag;
   } else if (message.type === 'error') {
-    logger.error(`[Worker] get block height error - ${message.error}`);
+    logger.error(`get block height error - ${message.error}`);
   }
 });
 
@@ -148,5 +148,3 @@ const checkConditionAndRun = () => {
 
 // 设置定时器，定期检查条件,检查时间和获取高度数据关联
 const intervalId = setInterval(checkConditionAndRun, (SLEEP_ON_GET_HEIGHT_SEC / 2) * 1000);
-
-main();
