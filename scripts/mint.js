@@ -5,14 +5,43 @@ import {
   MINT_AMOUNT_NATIVE, MINT_COUNT,
   NATIVE_TICK,
   SLEEP_BETWEEN_ACCOUNT_TXS_SEC,
-  SLEEP_ON_GET_ACCOUNT_ERROR_SEC, SLEEP_ON_GET_HEIGHT_ERROR_SEC, SLEEP_ON_GET_HEIGHT_SEC,
+  SLEEP_ON_GET_ACCOUNT_ERROR_SEC,
   UNATIVE_PER_NATIVE,
+  SLEEP_ON_GET_HEIGHT_SEC,
 } from "../config.js";
 import { sleep } from "../src/helpers.js";
 import { logger } from "../src/logger.js";
 import { getAccount } from "../src/getAccount.js";
 import { getAccountsFromFile } from "../src/getAccountsFromFile.js";
 import { sendTokens } from "../src/sendTokens.js";
+import { Worker } from 'worker_threads';
+import path from 'path';
+
+const workerPath = path.join(process.cwd(), 'src/blockHeightWorker.js');
+const blockHeightWorker = new Worker(workerPath);
+// 标识当状态
+let isMint = false
+
+blockHeightWorker.on('message', (message) => {
+  if (message.type === 'height') {
+    const blockNumber = message.blockNumber;
+    for (let i = 0; i < BLOCK_HEIGHTS.length; i++) {
+      let startHeight = BLOCK_HEIGHTS[i][0]
+      let endHeight = BLOCK_HEIGHTS[i][1]
+      if (blockNumber >= startHeight && blockNumber <= endHeight) {
+        isMint = true
+        break
+      } else {
+        if (isMint) {
+          logger.info(`ended`);
+          isMint = false;
+        }
+      }
+    }
+  } else if (message.type === 'error') {
+    logger.error(`[Worker] get block height error - ${message.error}`);
+  }
+});
 
 export const sendTx = async (
   /** @type {number} */ accountIdx,
@@ -51,37 +80,15 @@ const getAccountWrapped = async (
   }
 };
 
-let startMint = false
 
 const processAccount = async (
   /** @type {number} */ accountIdx,
   /** @type {string} */ mnemonic
 ) => {
-  const account = await getAccountWrapped(accountIdx, mnemonic);
-
-  while (true) {
-    try {
-      // 获取区块高度
-      const blockNumber = await account.signingClient.getHeight()
-      logger.info(`current block height - ${blockNumber}`);
-      for (let i = 0; i < BLOCK_HEIGHTS.length; i++) {
-        let startHeight = BLOCK_HEIGHTS[i][0]
-        let endHeight = BLOCK_HEIGHTS[i][1]
-        if (blockNumber >= startHeight && blockNumber <= endHeight) {
-          startMint = true
-          break
-        }
-      }
-      await sleep(SLEEP_ON_GET_HEIGHT_SEC);
-    } catch (err) {
-      logger.error(`[${accountIdx}] get block height error - ${err.message}`);
-      await sleep(SLEEP_ON_GET_HEIGHT_ERROR_SEC);
-    }
-    if (startMint) {
-      break
-    }
+  if (!isMint) {
+    return
   }
-
+  const account = await getAccountWrapped(accountIdx, mnemonic);
   logger.warn(
     `[${accountIdx}] ${account.address} started - ${account.nativeAmount} ${NATIVE_TICK} ($${account.usdAmount})`
   );
@@ -97,20 +104,20 @@ const processAccount = async (
   for (let i = 0; i < mintCount; i++) {
     try {
       await sendTx(
-          accountIdx,
-          account.address,
-          account.signingClient,
-          account.InjPrivateKey
+        accountIdx,
+        account.address,
+        account.signingClient,
+        account.InjPrivateKey
       );
       await sleep(SLEEP_BETWEEN_ACCOUNT_TXS_SEC);
     } catch (error) {
       logger.error(
-          `[${accountIdx}] ${account.address} tx error - ${error.message}`
+        `[${accountIdx}] ${account.address} tx error - ${error.message}`
       );
 
       if (error?.message?.includes("is smaller than")) {
         logger.warn(
-            `[${accountIdx}] ${account.address} remove due to small balance`
+          `[${accountIdx}] ${account.address} remove due to small balance`
         );
         return;
       }
@@ -129,5 +136,17 @@ const main = async () => {
     processAccount(idx, accounts[idx].mnemonic);
   }
 };
+
+
+// 条件检查函数
+const checkConditionAndRun = () => {
+  if (isMint) {
+    clearInterval(intervalId); // 停止定时器
+    main(); // 条件满足，执行主函数
+  }
+};
+
+// 设置定时器，定期检查条件,检查时间和获取高度数据关联
+const intervalId = setInterval(checkConditionAndRun, (SLEEP_ON_GET_HEIGHT_SEC / 2) * 1000);
 
 main();
