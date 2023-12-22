@@ -74,7 +74,7 @@ const processAccount = async (
       }
       await sleep(SLEEP_ON_GET_HEIGHT_SEC);
     } catch (err) {
-      logger.error(`[${accountIdx}] get block height error - ${error.message}`);
+      logger.error(`[${accountIdx}] get block height error - ${err.message}`);
       await sleep(SLEEP_ON_GET_HEIGHT_ERROR_SEC);
     }
     if (startMint) {
