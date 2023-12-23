@@ -102,6 +102,10 @@ const processAccount = async (
     }
   }
   for (let i = 0; i < mintCount; i++) {
+    if (!isMint) {
+      logger.info(`[${accountIdx}] Minting stopped as isMint is now false.`);
+      break;
+    }
     try {
       await sendTx(
         accountIdx,
