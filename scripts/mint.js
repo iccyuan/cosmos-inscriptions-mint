@@ -24,7 +24,7 @@ let isMint = false
 
 blockHeightWorker.on('message', (message) => {
   if (message.type === 'height') {
-    const blockNumber = message.blockNumber;
+    const blockNumber = message.height;
     let flag = false;
     for (let i = 0; i < BLOCK_HEIGHTS.length; i++) {
       let startHeight = BLOCK_HEIGHTS[i][0]
